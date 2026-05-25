@@ -78,3 +78,106 @@ export const generateQuestionsFromText = (text: string): Question[] => {
     },
   ];
 };
+
+// ─── 写真OCRテキストからリスニング問題を生成 ──────────────────
+const JAPANESE_MEANINGS: Record<string, string[]> = {
+  // よく出る単語の訳候補
+  play: ['する・演奏する', '勉強する', '食べる', '寝る'],
+  study: ['勉強する', '遊ぶ', '食べる', '走る'],
+  like: ['好きだ', '嫌いだ', '知る', '忘れる'],
+  go: ['行く', '来る', '帰る', '止まる'],
+  come: ['来る', '行く', '戻る', '出る'],
+  eat: ['食べる', '飲む', '作る', '買う'],
+  drink: ['飲む', '食べる', '持つ', '渡す'],
+  make: ['作る', '壊す', '買う', '売る'],
+  want: ['欲しい', '嫌だ', '持っている', '忘れた'],
+  have: ['持っている', '失う', '買う', '渡す'],
+};
+
+export const generateListeningFromText = (text: string): Question[] => {
+  const sentences = text
+    .replace(/\r/g, ' ').replace(/\n+/g, ' ')
+    .split(/[.!?。！？]/).map(s => s.trim()).filter(s => s.length > 5);
+
+  const wordQuestions: Question[] = [];
+  const sentenceQuestions: Question[] = [];
+
+  // 単語リスニング問題（英語の重要単語を抽出）
+  const allWords = Array.from(new Set(
+    (text.match(/[A-Za-z']+/g) ?? [])
+      .filter(w => w.length >= 4 && !STOP_WORDS.has(w.toLowerCase()))
+  ));
+
+  allWords.slice(0, 3).forEach(word => {
+    const meaning = JAPANESE_MEANINGS[word.toLowerCase()]?.[0];
+    if (meaning) {
+      const wrongs = JAPANESE_MEANINGS[word.toLowerCase()]?.slice(1) ?? ['する', '行く', '食べる'];
+      wordQuestions.push({
+        type: 'AI生成リスニング（単語）',
+        question: '音声を聞いて、意味を選びなさい。',
+        listenText: word,
+        choices: shuffleArray([meaning, ...wrongs]).slice(0, 4),
+        answer: meaning,
+        explanation: `${word} = ${meaning}`,
+        isListening: true,
+      });
+    } else {
+      // 訳がない場合はスペルを聞き取る問題
+      const fakeWords = [word + 's', word.slice(0, -1) + 'ed', word + 'ing', word + 'er']
+        .filter(w => w !== word).slice(0, 3);
+      wordQuestions.push({
+        type: 'AI生成リスニング（単語）',
+        question: '音声を聞いて、聞こえた単語を選びなさい。',
+        listenText: word,
+        choices: shuffleArray([word, ...fakeWords]),
+        answer: word,
+        explanation: `正しいスペルは「${word}」です。`,
+        isListening: true,
+      });
+    }
+  });
+
+  // 英文リスニング問題
+  sentences.slice(0, 3).forEach(sentence => {
+    const clean = sentence.replace(/\s+/g, ' ').trim();
+    if (clean.length < 10) return;
+
+    // 簡単な日本語要約を生成
+    const hasEveryDay = /every day/i.test(clean);
+    const hasYesterday = /yesterday/i.test(clean);
+    const hasNow = /\bnow\b/i.test(clean);
+    const timeStr = hasEveryDay ? '毎日' : hasYesterday ? '昨日' : hasNow ? '今' : '';
+
+    const subject = clean.match(/^(I|He|She|They|We|Tom|Ken|My \w+)/i)?.[0] ?? '';
+    const subjectJP = subject.toLowerCase() === 'i' ? '私' : subject.toLowerCase() === 'he' ? '彼' : subject.toLowerCase() === 'she' ? '彼女' : subject;
+
+    sentenceQuestions.push({
+      type: 'AI生成リスニング（英文）',
+      question: '音声を聞いて、内容に合うものを選びなさい。',
+      listenText: clean,
+      choices: shuffleArray([
+        `${subjectJP}が${timeStr}何かをする内容`,
+        '全く関係のない内容',
+        '反対の意味の内容',
+        '別の人物の話',
+      ]),
+      answer: `${subjectJP}が${timeStr}何かをする内容`,
+      explanation: `本文: 「${clean}」`,
+      isListening: true,
+    });
+  });
+
+  const all = [...wordQuestions, ...sentenceQuestions].slice(0, 5);
+  if (all.length > 0) return all;
+
+  // フォールバック
+  return [{
+    type: 'AI生成リスニング（英文）',
+    question: '音声を聞いて、内容に合うものを選びなさい。',
+    listenText: text.trim().slice(0, 60),
+    choices: ['英文の内容理解', '数学の計算', '理科の実験', '地理の学習'],
+    answer: '英文の内容理解',
+    explanation: '貼り付けられた英文から生成したリスニング問題です。',
+    isListening: true,
+  }];
+};
