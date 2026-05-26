@@ -132,12 +132,12 @@ function HomeScreen({
 // ─── クイズ画面 ──────────────────────────────────────────────────
 function QuizScreen({
   q, current, total, timer, questionTime, score, streak,
-  selected, showAnswer, mockMode, studyMode,
+  selected, showAnswer, mockMode, studyMode, autoSpeak,
   onSelect, onCheck, onNext, onHint, onAddReview, onHome,
 }: {
   q: Question; current: number; total: number; timer: number; questionTime: number;
   score: number; streak: number;
-  selected: string; showAnswer: boolean; mockMode: boolean; studyMode: StudyMode;
+  selected: string; showAnswer: boolean; mockMode: boolean; studyMode: StudyMode; autoSpeak: boolean;
   onSelect: (c: string) => void; onCheck: () => void; onNext: () => void;
   onHint: () => void; onAddReview: () => void; onHome: () => void;
 }) {
@@ -146,8 +146,18 @@ function QuizScreen({
   const prevQ = useRef(q.question);
 
   useEffect(() => {
-    if (prevQ.current !== q.question) { prevQ.current = q.question; setPlayCount(0); }
-  }, [q.question]);
+    if (prevQ.current !== q.question) {
+      prevQ.current = q.question;
+      setPlayCount(0);
+      // autoSpeakがONのとき問題文を自動読み上げ
+      if (autoSpeak && supported && !q.isListening) {
+        setTimeout(() => {
+          const en = q.question.match(/[A-Za-z][A-Za-z\s,.'!?-]{10,}/g);
+          speak(en ? en.join(' ') : q.question);
+        }, 500);
+      }
+    }
+  }, [q.question, autoSpeak, supported, q.isListening, speak]);
 
   const isCorrect = selected === q.answer;
   const timerPct = (timer / questionTime) * 100;
@@ -196,9 +206,9 @@ function QuizScreen({
             {isBoss ? '🔥 ボス' : `${modeInfo.emoji} ${q.type}`}
           </span>
           {mockMode && <span className="bg-red-500 text-white text-xs font-black px-2 py-0.5 rounded-full">模試</span>}
-          {supported && !q.isListening && (
-            <button onClick={handleSpeak} className={`ml-auto text-xs font-bold px-3 py-1 rounded-full ${speaking ? 'bg-orange-400 text-white' : 'bg-white/20 text-white'}`}>
-              {speaking ? '⏹' : '🔊'}
+          {supported && !q.isListening && autoSpeak && (
+            <button onClick={handleSpeak} className={`ml-auto text-xs font-bold px-3 py-1 rounded-full ${speaking ? 'bg-orange-400 text-white animate-pulse' : 'bg-white/20 text-white'}`}>
+              {speaking ? '⏹ 停止' : '🔊 読上中'}
             </button>
           )}
         </div>
@@ -226,18 +236,24 @@ function QuizScreen({
         {/* 選択肢 */}
         {!showAnswer ? (
           <>
-            <div className="grid gap-2 mb-3">
+            <div className="grid gap-3 mb-3">
               {q.choices.map((choice, i) => {
-                const labels = ['A', 'B', 'C', 'D'];
+                const labels = ['1', '2', '3', '4'];
                 const isSelected = selected === choice;
                 const canSelect = !q.isListening || playCount > 0;
                 return (
                   <button key={choice} onClick={() => canSelect && onSelect(choice)} disabled={!canSelect}
-                    className={`flex items-center gap-3 p-3 rounded-2xl text-left transition-all font-bold text-sm ${
-                      isSelected ? 'bg-white text-indigo-900 shadow-lg' : canSelect ? 'bg-white/10 text-white border border-white/20 hover:bg-white/20' : 'bg-white/5 text-white/30'
+                    className={`flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all font-bold text-base ${
+                      isSelected
+                        ? 'bg-yellow-400 text-indigo-900 shadow-xl scale-[1.02] border-2 border-yellow-300'
+                        : canSelect
+                          ? 'bg-white/10 text-white border-2 border-white/20 hover:bg-white/20 active:scale-95'
+                          : 'bg-white/5 text-white/30 border-2 border-white/10'
                     }`}>
-                    <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs font-black flex-shrink-0 ${isSelected ? 'bg-indigo-600 text-white' : 'bg-white/20 text-white'}`}>{labels[i]}</span>
-                    {choice}
+                    <span className={`w-9 h-9 rounded-xl flex items-center justify-center text-base font-black flex-shrink-0 ${
+                      isSelected ? 'bg-indigo-600 text-white' : 'bg-white/20 text-white'
+                    }`}>{labels[i]}</span>
+                    <span className="leading-snug">{choice}</span>
                   </button>
                 );
               })}
@@ -279,17 +295,23 @@ function QuizScreen({
               )}
             </div>
             {/* 正解ハイライト選択肢 */}
-            <div className="grid gap-1 mb-3">
+            <div className="grid gap-2 mb-3">
               {q.choices.map((choice, i) => {
-                const labels = ['A', 'B', 'C', 'D'];
+                const labels = ['1', '2', '3', '4'];
                 const isAnswer = choice === q.answer;
                 const isWrong = choice === selected && !isCorrect;
                 return (
-                  <div key={choice} className={`flex items-center gap-2 p-2 rounded-xl text-xs font-bold ${isAnswer ? 'bg-green-500/20 border border-green-400/40 text-white' : isWrong ? 'bg-red-500/20 border border-red-400/40 text-white' : 'text-white/30'}`}>
-                    <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-black flex-shrink-0 ${isAnswer ? 'bg-green-500 text-white' : isWrong ? 'bg-red-500 text-white' : 'bg-white/10 text-white/30'}`}>
+                  <div key={choice} className={`flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold border-2 ${
+                    isAnswer ? 'bg-green-500/30 border-green-400/60 text-white'
+                    : isWrong ? 'bg-red-500/30 border-red-400/60 text-white'
+                    : 'border-white/10 text-white/30'
+                  }`}>
+                    <span className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0 ${
+                      isAnswer ? 'bg-green-500 text-white' : isWrong ? 'bg-red-500 text-white' : 'bg-white/10 text-white/30'
+                    }`}>
                       {isAnswer ? '✓' : isWrong ? '✗' : labels[i]}
                     </span>
-                    {choice}
+                    <span className="leading-snug">{choice}</span>
                   </div>
                 );
               })}
@@ -349,6 +371,7 @@ export default function EnglishCoach() {
   const [mistakes, setMistakes] = useState<Question[]>([]);
   const [uploadedText, setUploadedText] = useState('');
   const [bossShown, setBossShown] = useState(false);
+  const [autoSpeak, setAutoSpeak] = useState(false);
 
   const questionTime = mockMode ? 15 : 30;
   const [timer, setTimer] = useState(questionTime);
@@ -481,6 +504,7 @@ export default function EnglishCoach() {
           uploadedText={uploadedText} onUploadedTextChange={setUploadedText}
           onGenerateNormal={handleGenerateNormal} onGenerateListening={handleGenerateListening}
           mockMode={mockMode} onToggleMock={() => setMockMode(m => !m)}
+          autoSpeak={autoSpeak} onToggleAutoSpeak={() => setAutoSpeak(s => !s)}
         />
       </>
     );
@@ -501,7 +525,7 @@ export default function EnglishCoach() {
       <QuizScreen
         q={q} current={current} total={activeQuestions.length}
         timer={timer} questionTime={questionTime} score={score} streak={streak}
-        selected={selected} showAnswer={showAnswer} mockMode={mockMode} studyMode={studyMode}
+        selected={selected} showAnswer={showAnswer} mockMode={mockMode} studyMode={studyMode} autoSpeak={autoSpeak}
         onSelect={setSelected} onCheck={handleCheck} onNext={handleNext}
         onHint={handleHint} onAddReview={handleAddReview} onHome={() => setScreen('home')}
       />

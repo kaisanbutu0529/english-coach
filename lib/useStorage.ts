@@ -48,7 +48,7 @@ export function useStorage() {
     setBadges(BADGE_DEFINITIONS.map(b => ({
       ...b,
       unlocked: !!saved[b.id],
-      unlockedAt: saved[`${b.id}_at`] as unknown as string | undefined,
+      unlockedAt: saved[`${b.id}_at`] as string | undefined,
     })));
   }, []);
 
